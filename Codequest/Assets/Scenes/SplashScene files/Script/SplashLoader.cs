@@ -6,31 +6,28 @@ using System.Collections;
 public class SplashLoader : MonoBehaviour
 {
     public Slider loadingBar;
-    public string nextSceneName = "LoginScene"; // Replace with your actual scene name
+    public string nextSceneName = "LoginScene"; // Change this to your actual next scene
+    public float fakeLoadingTime = 3f; // Simulated minimum loading time in seconds
 
     void Start()
     {
-        StartCoroutine(LoadAsync());
+        StartCoroutine(LoadWithDelay());
     }
 
-    IEnumerator LoadAsync()
+    IEnumerator LoadWithDelay()
     {
-        AsyncOperation operation = SceneManager.LoadSceneAsync(nextSceneName);
-        operation.allowSceneActivation = false;
+        float elapsed = 0f;
 
-        while (!operation.isDone)
+        // Simulate loading progress
+        while (elapsed < fakeLoadingTime)
         {
-            float progress = Mathf.Clamp01(operation.progress / 0.9f);
+            elapsed += Time.deltaTime;
+            float progress = Mathf.Clamp01(elapsed / fakeLoadingTime);
             loadingBar.value = progress;
-
-            // If loading is almost done, show full bar and wait briefly
-            if (progress >= 1f)
-            {
-                yield return new WaitForSeconds(0.5f);
-                operation.allowSceneActivation = true;
-            }
-
             yield return null;
         }
+
+        // Then load the next scene
+        SceneManager.LoadScene(nextSceneName);
     }
 }
