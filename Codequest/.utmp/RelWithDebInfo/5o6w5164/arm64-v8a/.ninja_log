@@ -1,12 +1,23 @@
 # ninja log v5
+125	8794	7715656616160612	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	49741c4018895394
 356	2142	7715656549049902	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	4ca9203b97df3780
+342	7928	7715656607281002	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	26d0ae9cdf1c25b7
+239	7736	7715656604856077	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	ac5042cc730e0795
 2144	6707	7715656592696009	D:/Git Projects/Codequest-Game/Codequest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/5o6w5164/obj/arm64-v8a/libswappywrapper.so	f671383e9899b3fe
 252	7533	7715656603075170	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	27e514dae8e4e3b5
 264	7616	7715656603834310	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	6d4cde202e628a80
-239	7736	7715656604856077	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	ac5042cc730e0795
-324	7739	7715656604779876	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8a442cf36cca32f5
-342	7928	7715656607281002	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	26d0ae9cdf1c25b7
 1	7970	7715656607301963	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	375d3bca5a507ee9
+324	7739	7715656604779876	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8a442cf36cca32f5
 284	8503	7715656613149816	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	137f056d47fbc67e
-125	8794	7715656616160612	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	49741c4018895394
 8795	9160	7715656619689751	D:/Git Projects/Codequest-Game/Codequest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/5o6w5164/obj/arm64-v8a/libgame.so	5519b006c1c891ba
+172	1727	7720007919663620	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	4ca9203b97df3780
+1728	2622	7720007928339001	D:/Git Projects/Codequest-Game/Codequest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/5o6w5164/obj/arm64-v8a/libswappywrapper.so	f671383e9899b3fe
+136	17477	7720008077172401	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	27e514dae8e4e3b5
+92	17481	7720008077136911	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	6d4cde202e628a80
+147	17539	7720008077836677	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8a442cf36cca32f5
+103	17551	7720008077882258	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	ac5042cc730e0795
+19	17657	7720008078890321	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	375d3bca5a507ee9
+159	17660	7720008078926034	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	26d0ae9cdf1c25b7
+125	17903	7720008081393088	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	137f056d47fbc67e
+114	18014	7720008082591069	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	49741c4018895394
+18014	18133	7720008083845164	D:/Git Projects/Codequest-Game/Codequest/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/5o6w5164/obj/arm64-v8a/libgame.so	5519b006c1c891ba
