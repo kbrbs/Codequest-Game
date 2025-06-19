@@ -29,31 +29,24 @@ public class RegisterManager : MonoBehaviour
 
     public void OnRegisterClick()
     {
-        string studentNumber = studentNumberInput.text.Trim();
-        string fullName = fullNameInput.text.Trim();
-        string email = emailInput.text.Trim();
+        string email = emailInput.text;
+        string studentNumber = studentNumberInput.text;
+        string classCode = classCodeInput.text;
+        string fullName = fullNameInput.text;
         string password = passwordInput.text;
-        string confirmPassword = confirmPasswordInput.text;
-        string classCode = classCodeInput.text.Trim();
 
-        if (string.IsNullOrEmpty(studentNumber) || string.IsNullOrEmpty(fullName) ||
-            string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) ||
-            string.IsNullOrEmpty(confirmPassword) || string.IsNullOrEmpty(classCode))
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) || 
+            string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName) || 
+            string.IsNullOrEmpty(password))
         {
-            feedbackText.text = "All fields are required.";
+            feedbackText.text = "Please fill in all required fields";
             return;
         }
 
-        if (password != confirmPassword)
-        {
-            feedbackText.text = "Passwords do not match.";
-            return;
-        }
-
-        CheckForDuplicate(email, studentNumber, () =>
+        CheckForDuplicate(email, studentNumber, classCode, async () =>
         {
             string hashedPassword = HashPassword(password);
-            SaveStudentToFirestore(studentNumber, fullName, email, hashedPassword, classCode);
+            await IncrementClassStudentCount(classCode, studentNumber, fullName, email, hashedPassword);
         });
     }
 
@@ -69,96 +62,102 @@ public class RegisterManager : MonoBehaviour
         }
     }
 
-    void CheckForDuplicate(string email, string studentNumber, Action onSuccess)
+    public async void CheckForDuplicate(string email, string studentNumber, string classCode, Action onSuccess)
     {
-        db.Collection("students")
-            .WhereEqualTo("email", email)
-            .GetSnapshotAsync().ContinueWithOnMainThread(emailTask =>
+        try
         {
-            if (emailTask.Result.Count > 0)
+            // First query to find the document with matching class code
+            Query query = db.Collection("classes").WhereEqualTo("classCode", classCode);
+            QuerySnapshot querySnapshot = await query.GetSnapshotAsync();
+
+            if (!querySnapshot.Any())
             {
-                feedbackText.text = "Email already exists.";
+                feedbackText.text = "Error: Class code not found";
                 return;
             }
 
-            db.Collection("students")
-                .WhereEqualTo("studentNumber", studentNumber)
-                .GetSnapshotAsync().ContinueWithOnMainThread(snTask =>
+            // Get the class document
+            DocumentReference classRef = querySnapshot.Documents.First().Reference;
+            
+            // Check for duplicate email or student number in the students subcollection
+            Query studentsQuery = classRef.Collection("students");
+            QuerySnapshot studentsSnapshot = await studentsQuery.GetSnapshotAsync();
+
+            bool emailExists = studentsSnapshot.Documents
+                .Any(doc => doc.GetValue<string>("email") == email);
+
+            bool studentNumberExists = studentsSnapshot.Documents
+                .Any(doc => doc.GetValue<string>("studentNumber") == studentNumber);
+
+            if (emailExists)
             {
-                if (snTask.Result.Count > 0)
-                {
-                    feedbackText.text = "Student number already exists.";
-                    return;
-                }
-
-                // No duplicates found
-                onSuccess?.Invoke();
-            });
-        });
-    }
-
-    void SaveStudentToFirestore(string studentNumber, string fullName, string email, string hashedPassword, string classCode)
-    {
-        DocumentReference studentDoc = db.Collection("students").Document();
-
-        Dictionary<string, object> studentData = new Dictionary<string, object>
-        {
-            { "studentNumber", studentNumber },
-            { "fullName", fullName },
-            { "email", email },
-            { "password", hashedPassword },
-            { "classCode", classCode },
-            { "status", "pending" },
-            { "isActive", false },
-            { "createdAt", Timestamp.GetCurrentTimestamp() }
-        };
-
-        studentDoc.SetAsync(studentData).ContinueWithOnMainThread(task =>
-        {
-            if (task.IsCompletedSuccessfully)
-            {
-                feedbackText.text = "Registration successful. Awaiting approval.";
-                IncrementClassStudentCount(classCode);
-                LogActivity(email, fullName, classCode);
+                feedbackText.text = "Error: Email already registered in this class";
+                return;
             }
-            else
+
+            if (studentNumberExists)
             {
-                feedbackText.text = "Error: " + task.Exception?.Message;
+                feedbackText.text = "Error: Student number already registered in this class";
+                return;
             }
-        });
-    }
 
-    public async void IncrementClassStudentCount(string classCode)
-    {
-        // First query to find the document with matching class code
-        Query query = db.Collection("classes").WhereEqualTo("classCode", classCode);
-        QuerySnapshot querySnapshot = await query.GetSnapshotAsync();
-
-        if (querySnapshot.Count == 0)
-        {
-            throw new ArgumentException($"No class found with code: {classCode}");
+            // If no duplicates found, proceed with registration
+            onSuccess?.Invoke();
         }
-
-        // Get the first (and should be only) matching document
-        DocumentReference classRef = querySnapshot.Documents.First().Reference;
-
-        await db.RunTransactionAsync(async transaction =>
+        catch (Exception ex)
         {
-            DocumentSnapshot snapshot = await transaction.GetSnapshotAsync(classRef);
-            if (snapshot.Exists)
+            feedbackText.text = "Error checking for duplicates: " + ex.Message;
+        }
+    }
+
+    public async Task IncrementClassStudentCount(string classCode, string studentNumber, string fullName, string email, string hashedPassword)
+    {
+        try
+        {
+            Query query = db.Collection("classes").WhereEqualTo("classCode", classCode);
+            QuerySnapshot querySnapshot = await query.GetSnapshotAsync();
+
+            if (!querySnapshot.Any())
             {
-                Dictionary<string, object> updates = new Dictionary<string, object>
+                feedbackText.text = "Error: Class code not found";
+                return;
+            }
+
+            DocumentReference classRef = querySnapshot.Documents.First().Reference;
+
+            await db.RunTransactionAsync(async transaction =>
+            {
+                DocumentSnapshot snapshot = await transaction.GetSnapshotAsync(classRef);
+                if (snapshot.Exists)
                 {
-                    { "studentCount", snapshot.GetValue<int>("studentCount") + 1 }
-                };
-                transaction.Update(classRef, updates);
-            }
-            else
-            {
-                transaction.Set(classRef, new Dictionary<string, object> { { "studentCount", 1 } }, 
-                    SetOptions.MergeAll);
-            }
-        });
+                    Dictionary<string, object> updates = new Dictionary<string, object>
+                    {
+                        { "studentCount", snapshot.GetValue<int>("studentCount") + 1 }
+                    };
+                    transaction.Update(classRef, updates);
+
+                    DocumentReference studentRecordRef = classRef.Collection("students").Document();
+                    Dictionary<string, object> studentData = new Dictionary<string, object>
+                    {
+                        { "studentNumber", studentNumber },
+                        { "fullName", fullName },
+                        { "email", email },
+                        { "password", hashedPassword },
+                        { "status", "pending" },
+                        { "isActive", false },
+                        { "createdAt", Timestamp.GetCurrentTimestamp() }
+                    };
+                    transaction.Set(studentRecordRef, studentData);
+                }
+            });
+
+            feedbackText.text = "Registration successful. Awaiting approval.";
+            LogActivity(email, fullName, classCode);
+        }
+        catch (Exception ex)
+        {
+            feedbackText.text = "Error: " + ex.Message;
+        }
     }
 
     void LogActivity(string email, string fullName, string classCode)
