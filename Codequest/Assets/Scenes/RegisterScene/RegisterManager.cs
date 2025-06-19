@@ -138,12 +138,18 @@ public class RegisterManager : MonoBehaviour
                 DocumentSnapshot snapshot = task.Result;
                 if (snapshot.Exists)
                 {
-                    int currentCount = snapshot.GetValue<int>("studentCount");
-                    transaction.Update(classRef, "studentCount", currentCount + 1);
+                    // Only update the studentCount field
+                    Dictionary<string, object> updates = new Dictionary<string, object>
+                    {
+                        { "studentCount", snapshot.GetValue<int>("studentCount") + 1 }
+                    };
+                    transaction.Update(classRef, updates);
                 }
                 else
                 {
-                    transaction.Set(classRef, new Dictionary<string, object> { { "studentCount", 1 } });
+                    // Create new document with only studentCount field
+                    transaction.Set(classRef, new Dictionary<string, object> { { "studentCount", 1 } }, 
+                        SetOptions.MergeAll);  // Use MergeAll to preserve any existing fields
                 }
                 return Task.CompletedTask;
             });
