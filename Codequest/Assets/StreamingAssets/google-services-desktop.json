@@ -1,29 +1,3 @@
-{
-  "project_info": {
-    "project_number": "5857953993",
-    "project_id": "codequest-2025",
-    "storage_bucket": "codequest-2025.firebasestorage.app"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:5857953993:android:303ab2e99d2499a9b52518",
-        "android_client_info": {
-          "package_name": "com.dked.codequest"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBjpetUCmVDCX0qvv_MRSsK4_jK96PqKyQ"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:cc077afab51a1aa4148295029c6bde922a0240b01dddfce28c2e14235d983d16
+size 672
