@@ -1,5 +1,6 @@
 using Firebase;
 using Firebase.Auth;
+using Firebase.Extensions;
 using Firebase.Firestore;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,89 +11,172 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 public class LoginManager : MonoBehaviour
 {
     [SerializeField] private TMP_InputField emailInput;
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_Text feedbackText;
+    public string menuSceneName = "MenuScene";
+    public string registerSceneName = "RegisterScene";
+
     private FirebaseFirestore db;
     private FirebaseAuth auth;
-    public string menuSceneName = "MenuScene";
 
     async void Start()
     {
-        // Initialize Firebase
         await Firebase.FirebaseApp.CheckAndFixDependenciesAsync();
 
-        // Initialize Firestore and Auth after Firebase is ready
         try
         {
             db = FirebaseFirestore.DefaultInstance;
             auth = FirebaseAuth.DefaultInstance;
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            Debug.LogError($"Firebase initialization error: {ex.Message}");
-            feedbackText.text = "Error initializing system";
+            Debug.LogError($"Firebase init error: {ex.Message}");
+            feedbackText.text = "Error initializing system.";
         }
     }
 
     public async void OnLoginButtonClick()
     {
-        if (db == null)
+        if (db == null || auth == null)
         {
             feedbackText.text = "System not ready. Please try again.";
             return;
         }
 
-        if (string.IsNullOrEmpty(emailInput.text) || string.IsNullOrEmpty(passwordInput.text))
+        string email = emailInput.text.Trim();
+        string password = passwordInput.text;
+
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
         {
-            feedbackText.text = "Please enter email and password";
+            feedbackText.text = "Please fill in all fields.";
             return;
         }
 
+        if (!IsValidEmail(email))
+        {
+            feedbackText.text = "Invalid email format.";
+            return;
+        }
 
         try
         {
-            // Query all classes to find the student
-            QuerySnapshot allClassesSnapshot = await db.Collection("classes").GetSnapshotAsync();
+            QuerySnapshot allClasses = await db.Collection("classes").GetSnapshotAsync();
             bool studentFound = false;
 
-            foreach (DocumentSnapshot classDoc in allClassesSnapshot.Documents)
+            foreach (DocumentSnapshot classDoc in allClasses.Documents)
             {
-                QuerySnapshot studentsSnapshot = await classDoc.Reference
+                QuerySnapshot students = await classDoc.Reference
                     .Collection("students")
-                    .WhereEqualTo("email", emailInput.text)
+                    .WhereEqualTo("email", email)
                     .GetSnapshotAsync();
 
-                if (studentsSnapshot.Count > 0)
+                if (students.Count > 0)
                 {
-                    DocumentSnapshot studentDoc = studentsSnapshot.Documents.First();
-                    string storedPassword = studentDoc.GetValue<string>("password");
+                    DocumentSnapshot studentDoc = students.Documents.First();
+                    string storedHash = studentDoc.GetValue<string>("password");
 
-                    if (VerifyPassword(passwordInput.text, storedPassword))
+                    if (!VerifyPassword(password, storedHash))
                     {
-                        studentFound = true;
-                        await HandleSuccessfulLogin(studentDoc);
-                        break;
+                        feedbackText.text = "Incorrect password.";
+                        return;
                     }
+
+                    // 🔐 Firebase Auth login
+                    await SignInWithFirebaseAuth(email, password);
+
+                    // ✅ Set isActive = true and status = "active"
+                    await SetStudentActive(studentDoc.Reference);
+
+                    // 🧠 Log login activity
+                    LogActivity(email, "login");
+
+                    studentFound = true;
+                    await LoadMenuScene();
+                    break;
                 }
             }
 
             if (!studentFound)
             {
-                feedbackText.text = "Invalid email or password";
+                feedbackText.text = "No account found with that email.";
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Debug.LogError($"Login error: {ex.Message}");
-            feedbackText.text = "Error during login";
+            feedbackText.text = "Unexpected error during login.";
         }
     }
 
-    string HashPassword(string password)
+    private async Task SignInWithFirebaseAuth(string email, string password)
+    {
+        try
+        {
+            await auth.CreateUserWithEmailAndPasswordAsync(email, password);
+            // await auth.SignInWithEmailAndPasswordAsync(email, password);
+            Debug.Log("Firebase Auth SignIn successful.");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Firebase Auth SignIn failed: " + ex.Message);
+            feedbackText.text = "Authentication failed.";
+            throw;
+        }
+    }
+
+    // ✅ Updates isActive and status to "active"
+    private async Task SetStudentActive(DocumentReference studentRef)
+    {
+        try
+        {
+            Dictionary<string, object> updateData = new Dictionary<string, object>
+            {
+                { "isActive", true },
+                { "status", "active" }
+            };
+            await studentRef.UpdateAsync(updateData);
+            Debug.Log("Student status and isActive updated to active.");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Failed to update isActive/status: " + ex.Message);
+        }
+    }
+
+    private async Task LoadMenuScene()
+    {
+        feedbackText.text = "Login successful!";
+        var sceneLoad = SceneManager.LoadSceneAsync(menuSceneName);
+        while (!sceneLoad.isDone)
+        {
+            await Task.Yield();
+        }
+    }
+
+    private void LogActivity(string email, string action)
+    {
+        Dictionary<string, object> log = new Dictionary<string, object>
+        {
+            { "action", action },
+            { "email", email },
+            { "description", $"User {email} performed {action}" },
+            { "timestamp", Timestamp.GetCurrentTimestamp() }
+        };
+
+        db.Collection("activity_logs").AddAsync(log);
+    }
+
+    private bool VerifyPassword(string inputPassword, string storedHash)
+    {
+        return HashPassword(inputPassword) == storedHash;
+    }
+
+    private string HashPassword(string password)
     {
         using (SHA256 sha256 = SHA256.Create())
         {
@@ -104,48 +188,13 @@ public class LoginManager : MonoBehaviour
         }
     }
 
-    void LogActivity(string email, string classCode, string action)
+    private bool IsValidEmail(string email)
     {
-        Dictionary<string, object> log = new Dictionary<string, object>
-        {
-            { "action", action },
-            { "email", email },
-            { "description", $"User {email} performed {action} in class {classCode}" },
-            { "timestamp", Timestamp.GetCurrentTimestamp() }
-        };
-
-        DocumentReference logRef = db.Collection("activity_logs").Document();
-        logRef.SetAsync(log);
+        return Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
     }
 
-    private async Task HandleSuccessfulLogin(DocumentSnapshot studentDoc)
+    public void RegisterButtonClick()
     {
-        try
-        {
-            feedbackText.text = "Login successful";
-
-            // Store user data if needed
-            // await StoreUserData(studentDoc);  // Uncomment if you need to store user data
-
-            var sceneLoad = SceneManager.LoadSceneAsync("MenuScene");
-
-            while (!sceneLoad.isDone)
-            {
-                await Task.Yield();
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError($"Login completion error: {ex.Message}");
-            feedbackText.text = "Error completing login";
-        }
-    }
-
-    private bool VerifyPassword(string inputPassword, string storedHash)
-    {
-        // Implement your hash verification logic here
-        // This is a placeholder implementation
-        string inputHash = HashPassword(inputPassword);
-        return inputHash == storedHash;
+        var sceneLoad = SceneManager.LoadSceneAsync(registerSceneName);
     }
 }

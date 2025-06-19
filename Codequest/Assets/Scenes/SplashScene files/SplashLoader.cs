@@ -71,13 +71,12 @@ public class SplashLoader : MonoBehaviour
             if (user != null)
             {
                 ShowToast("✅ Logged in via Firebase.");
-                nextSceneName = "HomeScene"; // or your main gameplay scene
+                nextSceneName = "MenuScene"; // or your main gameplay scene
             }
             else
             {
                 ShowToast("🔐 No session found. Please log in.");
-                // nextSceneName = "LoginScene";
-                nextSceneName = "RegisterScene";
+                nextSceneName = "LoginScene";
             }
         }
         else
@@ -85,7 +84,7 @@ public class SplashLoader : MonoBehaviour
             if (LocalUserExists())
             {
                 ShowToast("📴 Offline mode: Resuming local session.");
-                nextSceneName = "HomeScene";
+                nextSceneName = "MenuScene";
             }
             else
             {

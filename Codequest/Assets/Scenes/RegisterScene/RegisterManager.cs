@@ -8,6 +8,7 @@ using System.Text;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Linq;
+using UnityEngine.SceneManagement;
 
 
 public class RegisterManager : MonoBehaviour
@@ -19,6 +20,8 @@ public class RegisterManager : MonoBehaviour
     public TMP_InputField confirmPasswordInput;
     public TMP_InputField classCodeInput;
     public TextMeshProUGUI feedbackText;
+
+    public string loginSceneName = "LoginScene";
 
     private FirebaseFirestore db;
 
@@ -35,8 +38,8 @@ public class RegisterManager : MonoBehaviour
         string fullName = fullNameInput.text;
         string password = passwordInput.text;
 
-        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) || 
-            string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName) || 
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) ||
+            string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName) ||
             string.IsNullOrEmpty(password))
         {
             feedbackText.text = "Please fill in all required fields";
@@ -78,7 +81,7 @@ public class RegisterManager : MonoBehaviour
 
             // Get the class document
             DocumentReference classRef = querySnapshot.Documents.First().Reference;
-            
+
             // Check for duplicate email or student number in the students subcollection
             Query studentsQuery = classRef.Collection("students");
             QuerySnapshot studentsSnapshot = await studentsQuery.GetSnapshotAsync();
@@ -173,5 +176,10 @@ public class RegisterManager : MonoBehaviour
         };
 
         logRef.SetAsync(log);
+    }
+    
+        public void LoginButtonClick()
+    {
+        var sceneLoad = SceneManager.LoadSceneAsync(loginSceneName);
     }
 }
