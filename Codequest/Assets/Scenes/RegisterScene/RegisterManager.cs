@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
+using System.Linq;
 
 
 public class RegisterManager : MonoBehaviour
@@ -127,32 +128,36 @@ public class RegisterManager : MonoBehaviour
         });
     }
 
-    void IncrementClassStudentCount(string classCode)
+    public async void IncrementClassStudentCount(string classCode)
     {
-        DocumentReference classRef = db.Collection("classes").Document(classCode);
+        // First query to find the document with matching class code
+        Query query = db.Collection("classes").WhereEqualTo("classCode", classCode);
+        QuerySnapshot querySnapshot = await query.GetSnapshotAsync();
 
-        db.RunTransactionAsync(transaction =>
+        if (querySnapshot.Count == 0)
         {
-            return transaction.GetSnapshotAsync(classRef).ContinueWith(task =>
+            throw new ArgumentException($"No class found with code: {classCode}");
+        }
+
+        // Get the first (and should be only) matching document
+        DocumentReference classRef = querySnapshot.Documents.First().Reference;
+
+        await db.RunTransactionAsync(async transaction =>
+        {
+            DocumentSnapshot snapshot = await transaction.GetSnapshotAsync(classRef);
+            if (snapshot.Exists)
             {
-                DocumentSnapshot snapshot = task.Result;
-                if (snapshot.Exists)
+                Dictionary<string, object> updates = new Dictionary<string, object>
                 {
-                    // Only update the studentCount field
-                    Dictionary<string, object> updates = new Dictionary<string, object>
-                    {
-                        { "studentCount", snapshot.GetValue<int>("studentCount") + 1 }
-                    };
-                    transaction.Update(classRef, updates);
-                }
-                else
-                {
-                    // Create new document with only studentCount field
-                    transaction.Set(classRef, new Dictionary<string, object> { { "studentCount", 1 } }, 
-                        SetOptions.MergeAll);  // Use MergeAll to preserve any existing fields
-                }
-                return Task.CompletedTask;
-            });
+                    { "studentCount", snapshot.GetValue<int>("studentCount") + 1 }
+                };
+                transaction.Update(classRef, updates);
+            }
+            else
+            {
+                transaction.Set(classRef, new Dictionary<string, object> { { "studentCount", 1 } }, 
+                    SetOptions.MergeAll);
+            }
         });
     }
 
