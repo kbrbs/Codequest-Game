@@ -11,31 +11,40 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 
 public class LoginManager : MonoBehaviour
 {
     [SerializeField] private TMP_InputField emailInput;
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_Text feedbackText;
+    [SerializeField] private GameObject loginPanel;
+    [SerializeField] private GameObject changePasswordPanel;
+    [SerializeField] private TMP_InputField newPasswordInput;
+    [SerializeField] private TMP_InputField confirmPasswordInput;
+    [SerializeField] private TMP_Text changePassFeedbackText;
+
     public string menuSceneName = "MenuScene";
     public string registerSceneName = "RegisterScene";
 
     private FirebaseFirestore db;
     private FirebaseAuth auth;
+    private DocumentReference currentStudentRef;
+    private string currentEmail;
+    private string pendingClassCode;
 
-    async void Start()
+    private async void Start()
     {
-        await Firebase.FirebaseApp.CheckAndFixDependenciesAsync();
-
-        try
+        var dependencyStatus = await FirebaseApp.CheckAndFixDependenciesAsync();
+        if (dependencyStatus == DependencyStatus.Available)
         {
             db = FirebaseFirestore.DefaultInstance;
             auth = FirebaseAuth.DefaultInstance;
+            changePasswordPanel.SetActive(false);
+            loginPanel.SetActive(true);
         }
-        catch (Exception ex)
+        else
         {
-            Debug.LogError($"Firebase init error: {ex.Message}");
+            Debug.LogError($"Could not resolve all Firebase dependencies: {dependencyStatus}");
             feedbackText.text = "Error initializing system.";
         }
     }
@@ -49,62 +58,81 @@ public class LoginManager : MonoBehaviour
         }
 
         string email = emailInput.text.Trim();
-        string password = passwordInput.text;
+        string tempPassword = passwordInput.text;
 
-        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(tempPassword))
         {
             feedbackText.text = "Please fill in all fields.";
             return;
         }
 
-        if (!IsValidEmail(email))
-        {
-            feedbackText.text = "Invalid email format.";
-            return;
-        }
-
+        // 1. Try Auth login first
         try
         {
-            QuerySnapshot allClasses = await db.Collection("classes").GetSnapshotAsync();
-            bool studentFound = false;
-
-            foreach (DocumentSnapshot classDoc in allClasses.Documents)
+            var providers = await auth.FetchProvidersForEmailAsync(email);
+            if (providers != null && providers.Any())
             {
-                QuerySnapshot students = await classDoc.Reference
-                    .Collection("students")
-                    .WhereEqualTo("email", email)
-                    .GetSnapshotAsync();
-
-                if (students.Count > 0)
+                // Email exists in Auth, check if password is correct
+                if (providers.Contains("password"))
                 {
-                    DocumentSnapshot studentDoc = students.Documents.First();
-                    string storedHash = studentDoc.GetValue<string>("password");
-
-                    if (!VerifyPassword(password, storedHash))
+                    try
+                    {
+                        var userCredential = await auth.SignInWithEmailAndPasswordAsync(email, tempPassword);
+                        await UpdateStudentIsActiveByUid(userCredential.User.UserId);
+                        await LoadMenuScene();
+                        return;
+                    }
+                    catch (Exception)
                     {
                         feedbackText.text = "Incorrect password.";
                         return;
                     }
-
-                    // 🔐 Firebase Auth login
-                    await SignInWithFirebaseAuth(email, password);
-
-                    // ✅ Set isActive = true and status = "active"
-                    await SetStudentActive(studentDoc.Reference);
-
-                    // 🧠 Log login activity
-                    LogActivity(email, "login");
-
-                    studentFound = true;
-                    await LoadMenuScene();
-                    break;
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            feedbackText.text = "Auth check error: " + ex.Message;
+            return;
+        }
+        
 
-            if (!studentFound)
+        // 2. Check students collection by email (doc ID)
+        try
+        {
+            QuerySnapshot classesSnapshot = await db.Collection("classes").GetSnapshotAsync();
+            bool found = false;
+            foreach (var classDoc in classesSnapshot.Documents)
             {
-                feedbackText.text = "No account found with that email.";
+                var studentDocRef = classDoc.Reference.Collection("students").Document(email);
+                var studentDocSnap = await studentDocRef.GetSnapshotAsync();
+                if (studentDocSnap.Exists)
+                {
+                    found = true;
+                    currentStudentRef = studentDocRef;
+                    currentEmail = email;
+                    pendingClassCode = classDoc.GetValue<string>("classCode");
+
+                    var studentData = studentDocSnap.ToDictionary();
+                    string storedTempPassword = studentData.ContainsKey("tempPassword") ? studentData["tempPassword"] as string : null;
+
+                    if (VerifyPassword(tempPassword, storedTempPassword))
+                    {
+                        // Show change password panel
+                        loginPanel.SetActive(false);
+                        changePasswordPanel.SetActive(true);
+                        changePassFeedbackText.text = "";
+                        return;
+                    }
+                    else
+                    {
+                        feedbackText.text = "Incorrect temporary password.";
+                        return;
+                    }
+                }
             }
+            if (!found)
+                feedbackText.text = "No account found with that email.";
         }
         catch (Exception ex)
         {
@@ -113,62 +141,90 @@ public class LoginManager : MonoBehaviour
         }
     }
 
-    private async Task SignInWithFirebaseAuth(string email, string password)
+    // Called by the submit button on the change password panel
+    public async void OnChangePasswordSubmit()
     {
-        try
-        {
-            await auth.CreateUserWithEmailAndPasswordAsync(email, password);
-            // await auth.SignInWithEmailAndPasswordAsync(email, password);
-            Debug.Log("Firebase Auth SignIn successful.");
-        }
-        catch (Exception ex)
-        {
-            Debug.LogWarning("Firebase Auth SignIn failed: " + ex.Message);
-            feedbackText.text = "Authentication failed.";
-            throw;
-        }
-    }
+        string newPass = newPasswordInput.text;
+        string confirmPass = confirmPasswordInput.text;
 
-    // ✅ Updates isActive and status to "active"
-    private async Task SetStudentActive(DocumentReference studentRef)
-    {
+        if (string.IsNullOrEmpty(newPass) || string.IsNullOrEmpty(confirmPass))
+        {
+            changePassFeedbackText.text = "Please fill in all fields.";
+            return;
+        }
+        if (newPass != confirmPass)
+        {
+            changePassFeedbackText.text = "Passwords do not match.";
+            return;
+        }
+        if (newPass.Length < 6)
+        {
+            changePassFeedbackText.text = "Password must be at least 6 characters.";
+            return;
+        }
+
+        // 1. Create Auth account
         try
         {
-            Dictionary<string, object> updateData = new Dictionary<string, object>
+            Debug.Log($"Creating user with email: {currentEmail}");
+            var userCredential = await auth.CreateUserWithEmailAndPasswordAsync(currentEmail, newPass);
+            string uid = userCredential.User.UserId;
+
+            // 2. Copy student data to new doc with UID as ID
+            var studentDocSnap = await currentStudentRef.GetSnapshotAsync();
+            if (!studentDocSnap.Exists)
             {
-                { "isActive", true },
-                { "status", "active" }
-            };
-            await studentRef.UpdateAsync(updateData);
-            Debug.Log("Student status and isActive updated to active.");
+                changePassFeedbackText.text = "Student record not found.";
+                return;
+            }
+            var studentData = studentDocSnap.ToDictionary();
+            studentData["isActive"] = true;
+            studentData["uid"] = uid;
+            studentData["firstLogin"] = false;
+            studentData["status"] = "active";
+            studentData["tempPassword"] = FieldValue.Delete;
+
+            // Reference to new doc with UID as ID
+            var classRef = currentStudentRef.Parent.Parent;
+            var newStudentRef = classRef.Collection("students").Document(uid);
+
+            // Use merge:true so FieldValue.Delete works
+            await newStudentRef.SetAsync(studentData, SetOptions.MergeAll);
+            await currentStudentRef.DeleteAsync();
+            currentStudentRef = newStudentRef;
+
+            // 3. Go to menu
+            changePasswordPanel.SetActive(false);
+            await LogActivity(
+                "First login complete",
+                pendingClassCode,
+                currentEmail,
+                "Firebase Auth account created with new password.",
+                userCredential.User.UserId
+            );
+            feedbackText.text = "Password changed successfully!";
+            await LoadMenuScene();
         }
         catch (Exception ex)
         {
-            Debug.LogWarning("Failed to update isActive/status: " + ex.Message);
+            changePassFeedbackText.text = "Failed to create account: " + ex.Message;
+            Debug.LogError("Change password error: " + ex);
         }
     }
 
-    private async Task LoadMenuScene()
+    private async Task LogActivity(string action, string classCode, string email, string description, string performedByUid)
     {
-        feedbackText.text = "Login successful!";
-        var sceneLoad = SceneManager.LoadSceneAsync(menuSceneName);
-        while (!sceneLoad.isDone)
-        {
-            await Task.Yield();
-        }
-    }
-
-    private void LogActivity(string email, string action)
-    {
-        Dictionary<string, object> log = new Dictionary<string, object>
+        var logRef = db.Collection("activity_logs").Document();
+        var log = new Dictionary<string, object>
         {
             { "action", action },
-            { "email", email },
-            { "description", $"User {email} performed {action}" },
-            { "timestamp", Timestamp.GetCurrentTimestamp() }
+            { "classCode", classCode },
+            { "performedByEmail", email },
+            { "description", description },
+            { "timestamp", Timestamp.GetCurrentTimestamp() },
+            { "performedBy", performedByUid }
         };
-
-        db.Collection("activity_logs").AddAsync(log);
+        await logRef.SetAsync(log);
     }
 
     private bool VerifyPassword(string inputPassword, string storedHash)
@@ -188,9 +244,32 @@ public class LoginManager : MonoBehaviour
         }
     }
 
-    private bool IsValidEmail(string email)
+    private async Task UpdateStudentIsActiveByUid(string uid)
     {
-        return Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+        QuerySnapshot classesSnapshot = await db.Collection("classes").GetSnapshotAsync();
+        foreach (var classDoc in classesSnapshot.Documents)
+        {
+            var studentDocRef = classDoc.Reference.Collection("students").Document(uid);
+            var studentDocSnap = await studentDocRef.GetSnapshotAsync();
+            if (studentDocSnap.Exists)
+            {
+                await studentDocRef.UpdateAsync(new Dictionary<string, object>
+                {
+                    { "isActive", true }
+                });
+                break;
+            }
+        }
+    }
+
+    private async Task LoadMenuScene()
+    {
+        feedbackText.text = "Login successful!";
+        var sceneLoad = SceneManager.LoadSceneAsync(menuSceneName);
+        while (!sceneLoad.isDone)
+        {
+            await Task.Yield();
+        }
     }
 
     public void RegisterButtonClick()
