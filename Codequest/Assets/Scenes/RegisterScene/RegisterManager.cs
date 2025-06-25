@@ -12,6 +12,7 @@ using System.Linq;
 using UnityEngine.SceneManagement;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
+using UnityEngine.UI; 
 
 public class RegisterManager : MonoBehaviour
 {
@@ -20,6 +21,7 @@ public class RegisterManager : MonoBehaviour
     public TMP_InputField emailInput;
     public TMP_InputField classCodeInput;
     public TextMeshProUGUI feedbackText;
+    public Button regButton;
 
     public string loginSceneName = "LoginScene";
 
@@ -37,43 +39,63 @@ public class RegisterManager : MonoBehaviour
         string classCode = classCodeInput.text.Trim();
         string fullName = fullNameInput.text.Trim();
 
-        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) ||
-            string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName))
-        {
-            feedbackText.text = "Please fill in all required fields";
-            return;
-        }
+        Debug.Log("=== Reg Button Clicked ===");
 
-        CheckForDuplicate(email, studentNumber, classCode, async () =>
+        // Disable reg button immediately
+        SetRegButtonState(false);
+        try
         {
-            // Check Firebase Auth for existing email
-            var auth = FirebaseAuth.DefaultInstance;
-            try
+            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) ||
+                string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName))
             {
-                var fetchProvidersTask = auth.FetchProvidersForEmailAsync(email);
-                await fetchProvidersTask;
-                if (fetchProvidersTask.Result != null && fetchProvidersTask.Result.Any())
-                {
-                    feedbackText.text = "Email already registered in authentication system.";
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                feedbackText.text = "Error checking authentication";
-                Debug.LogError("Error checking authentication: " + ex.Message);
+                feedbackText.text = "Please fill in all required fields";
                 return;
             }
 
-            // Generate and hash temporary password
-            string tempPassword = GenerateTemporaryPassword();
-            string hashedTempPassword = HashPassword(tempPassword);
+            CheckForDuplicate(email, studentNumber, classCode, async () =>
+            {
+                // Check Firebase Auth for existing email
+                var auth = FirebaseAuth.DefaultInstance;
+                try
+                {
+                    var fetchProvidersTask = auth.FetchProvidersForEmailAsync(email);
+                    await fetchProvidersTask;
+                    if (fetchProvidersTask.Result != null && fetchProvidersTask.Result.Any())
+                    {
+                        feedbackText.text = "Email already registered in authentication system.";
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    feedbackText.text = "Error checking authentication";
+                    Debug.LogError("Error checking authentication: " + ex.Message);
+                    return;
+                }
 
-            // Send temporary password to email
-            StartCoroutine(SendTemporaryPasswordEmail(email, tempPassword, fullName));
+                // Generate and hash temporary password
+                string tempPassword = GenerateTemporaryPassword();
+                string hashedTempPassword = HashPassword(tempPassword);
 
-            await AddStudentToClass(classCode, studentNumber, fullName, email, hashedTempPassword);
-        });
+                // Send temporary password to email
+                StartCoroutine(SendTemporaryPasswordEmail(email, tempPassword, fullName));
+
+                await AddStudentToClass(classCode, studentNumber, fullName, email, hashedTempPassword);
+            });
+
+        }
+        finally
+        {
+            SetRegButtonState(true); // Disable button to prevent multiple clicks
+        }
+    }
+    private void SetRegButtonState(bool enabled)
+    {
+        if (regButton != null)
+        {
+            regButton.interactable = enabled;
+            Debug.Log($"Register button {(enabled ? "enabled" : "disabled")}");
+        }
     }
 
     private string GenerateTemporaryPassword(int length = 8)
