@@ -1,4 +1,6 @@
 using Firebase;
+using Firebase.AppCheck;
+using Firebase.Database;
 using Firebase.Auth;
 using Firebase.Extensions;
 using Firebase.Firestore;
@@ -48,11 +50,17 @@ public class LoginManager : MonoBehaviour
 
         try
         {
+            // Check dependencies first
             var dependencyStatus = await FirebaseApp.CheckAndFixDependenciesAsync();
+            Debug.Log($"Firebase dependency status: {dependencyStatus}");
+
             if (dependencyStatus == DependencyStatus.Available)
             {
-                db = FirebaseFirestore.DefaultInstance;
-                auth = FirebaseAuth.DefaultInstance;
+                // Initialize Firebase services
+                FirebaseApp app = FirebaseApp.DefaultInstance;
+                auth = FirebaseAuth.GetAuth(app);
+                db = FirebaseFirestore.GetInstance(app);
+
                 changePasswordPanel.SetActive(false);
                 loginPanel.SetActive(true);
                 Debug.Log("Firebase initialized successfully.");
@@ -67,6 +75,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Firebase initialization error: {ex.Message}");
+            Debug.LogError($"Stack trace: {ex.StackTrace}");
             feedbackText.text = "System initialization failed. Please restart the application.";
         }
     }
@@ -75,10 +84,12 @@ public class LoginManager : MonoBehaviour
     {
         Debug.Log("=== Login Button Clicked ===");
 
+        // Disable login button to prevent multiple clicks
         SetLoginButtonState(false);
 
         try
         {
+            // Validate Firebase initialization
             if (db == null || auth == null)
             {
                 Debug.LogError("Firebase not initialized properly.");
@@ -86,132 +97,125 @@ public class LoginManager : MonoBehaviour
                 return;
             }
 
+            // Get and validate input
             string email = emailInput.text.Trim().ToLower();
             string password = passwordInput.text;
 
-            Debug.Log($"Login attempt with email: {email}");
-
-            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+            if (!ValidateInput(email, password))
             {
-                Debug.LogWarning("Email or password field is empty.");
-                feedbackText.text = "Please fill in all fields.";
-                return;
+                return; // Error messages already set in ValidateInput
             }
 
-            if (!IsValidEmail(email))
-            {
-                Debug.LogWarning("Invalid email format entered.");
-                feedbackText.text = "Please enter a valid email address.";
-                return;
-            }
-
+            Debug.Log($"Starting login process for email: {email}");
             feedbackText.text = "Checking account...";
 
-            // Try to sign in with Auth first
-            try
+            // STEP 1: Check if email is already registered in Firebase Auth
+            bool isRegisteredInAuth = await CheckIfEmailExistsInAuth(email, password);
+
+            if (isRegisteredInAuth)
             {
-                feedbackText.text = "Logging in...";
+                // STEP 2: Email exists in Auth - attempt regular login
+                Debug.Log("Email found in Firebase Auth. Attempting regular login...");
                 await AttemptRegularLogin(email, password);
-                return;
             }
-            catch (FirebaseException ex)
+            else
             {
-                if (ex.ErrorCode == (int)AuthError.UserNotFound)
-                {
-                    Debug.Log("User not found in Auth, checking students collection...");
-                    // Continue to students collection check below
-                }
-                else
-                {
-                    Debug.LogError($"Login failed: {ex.Message}");
-                    feedbackText.text = "Invalid login credentials. Please try again.";
-                    return;
-                }
+                // STEP 3: Email not in Auth - check students collection for first login
+                Debug.Log("Email not found in Firebase Auth. Checking for first login...");
+                await AttemptFirstLogin(email, password);
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Unexpected login error: {ex.Message}");
-                feedbackText.text = "Login failed. Please try again.";
-                return;
-            }
-
-            // If not in Auth, check students collection for first login
-            QuerySnapshot classesSnapshot = await db.Collection("classes").GetSnapshotAsync();
-            bool studentFound = false;
-
-            foreach (var classDoc in classesSnapshot.Documents)
-            {
-                var studentDocRef = classDoc.Reference.Collection("students").Document(email);
-                var studentDocSnap = await studentDocRef.GetSnapshotAsync();
-
-                if (studentDocSnap.Exists)
-                {
-                    studentFound = true;
-                    var studentData = studentDocSnap.ToDictionary();
-                    string classCode = classDoc.GetValue<string>("classCode");
-
-                    bool firstLogin = studentData.ContainsKey("firstLogin") &&
-                                      Convert.ToBoolean(studentData["firstLogin"]);
-
-                    if (firstLogin)
-                    {
-                        // Verify temporary password
-                        string storedTempPassword = studentData.ContainsKey("tempPassword") ?
-                            studentData["tempPassword"] as string : null;
-
-                        if (string.IsNullOrEmpty(storedTempPassword))
-                        {
-                            Debug.LogError("No temporary password found for first login account.");
-                            feedbackText.text = "Account setup incomplete. Please contact administrator.";
-                            return;
-                        }
-
-                        if (VerifyPassword(password, storedTempPassword))
-                        {
-                            Debug.Log("Temporary password verified successfully.");
-
-                            // Store current session data
-                            currentStudentRef = studentDocRef;
-                            currentEmail = email;
-                            pendingClassCode = classCode;
-
-                            // Show change password panel
-                            loginPanel.SetActive(false);
-                            changePasswordPanel.SetActive(true);
-                            changePassFeedbackText.text = "Please create a new password for your account.";
-
-                            // Clear input fields
-                            newPasswordInput.text = "";
-                            confirmPasswordInput.text = "";
-
-                            return;
-                        }
-                        else
-                        {
-                            Debug.LogWarning("Incorrect temporary password entered.");
-                            feedbackText.text = "Incorrect temporary password.";
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        // Should not happen: Auth account should exist if firstLogin is false
-                        feedbackText.text = "Account already activated. Please use your regular password.";
-                        return;
-                    }
-                }
-            }
-
-            if (!studentFound)
-            {
-                Debug.LogWarning($"No student account found with email: {email}");
-                feedbackText.text = "No account found with this email address.";
-            }
-            // --- NEW LOGIC END ---
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Unexpected error in login process: {ex.Message}");
+            feedbackText.text = "Login failed. Please try again.";
         }
         finally
         {
+            // Re-enable login button
             SetLoginButtonState(true);
+        }
+    }
+
+    private bool ValidateInput(string email, string password)
+    {
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+        {
+            Debug.LogWarning("Email or password field is empty.");
+            feedbackText.text = "Please fill in all fields.";
+            return false;
+        }
+
+        if (!IsValidEmail(email))
+        {
+            Debug.LogWarning("Invalid email format entered.");
+            feedbackText.text = "Please enter a valid email address.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> CheckIfEmailExistsInAuth(string email, string password)
+    {
+        try
+        {
+            Debug.Log($"Checking if email exists in Firebase Auth: {email},{password}");
+            try
+            {
+                await auth.SignInWithEmailAndPasswordAsync(email, password);
+
+                Debug.Log($"Email exists in Firebase Auth: true (unexpected successful login)");
+                return true;
+
+                // var signInMethods = await auth.FetchSignInMethodsForEmailAsync(email);
+                // bool exists = signInMethods != null && signInMethods.Count > 0;
+                // Debug.Log($"Email exists in Firebase Auth: {exists}");
+
+                // return exists;
+            }
+            catch (FirebaseException authEx)
+            {
+                Debug.Log($"Auth check exception: {authEx.Message} (Code: {authEx.ErrorCode})");
+
+                // Check specific error codes to determine if user exists
+                switch (authEx.ErrorCode)
+                {
+                    case (int)AuthError.WrongPassword:
+                        // Wrong password means the user exists
+                        Debug.Log($"Email exists in Firebase Auth: true (wrong password error)");
+                        return true;
+
+                    case (int)AuthError.TooManyRequests:
+                        // Too many requests - user likely exists but we can't verify
+                        // Assume exists to try regular login path first
+                        Debug.Log($"Email exists in Firebase Auth: true (too many requests - assuming exists)");
+                        return true;
+
+                    case (int)AuthError.UserDisabled:
+                        // User exists but is disabled
+                        Debug.Log($"Email exists in Firebase Auth: true (user disabled)");
+                        return true;
+
+                    case (int)AuthError.UserNotFound:
+                        // User definitely doesn't exist in Auth
+                        Debug.Log($"Email exists in Firebase Auth: false (user not found)");
+                        return false;
+
+                    default:
+                        // For other errors, assume user doesn't exist in Auth
+                        // This allows us to check the students collection
+                        Debug.Log($"Email exists in Firebase Auth: false (other auth error: {authEx.ErrorCode})");
+                        return false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Unexpected error checking email in Auth: {ex.Message}");
+            // On unexpected error, assume email doesn't exist in Auth
+            // This allows us to proceed to check students collection
+            return false;
         }
     }
 
@@ -221,53 +225,41 @@ public class LoginManager : MonoBehaviour
 
         try
         {
+            feedbackText.text = "Logging in...";
+
             var userCredential = await auth.SignInWithEmailAndPasswordAsync(email, password);
             Debug.Log($"Regular login successful for user: {userCredential.User.UserId}");
 
-            // Log successful login activity
-            // await LogActivity(
-            //     "Regular login successful",
-            //     "N/A",
-            //     email,
-            //     "User logged in successfully with existing account.",
-            //     userCredential.User.UserId
-            // );
-
+            feedbackText.text = "Login successful! Loading...";
             await LoadMenuScene();
         }
         catch (FirebaseException ex)
         {
-            Debug.LogWarning($"Regular login failed: {ex.Message}");
+            Debug.LogWarning($"Regular login failed: {ex.Message} (Code: {ex.ErrorCode})");
 
-            // Check if it's an authentication error
-            if (ex.ErrorCode == (int)AuthError.WrongPassword ||
-                ex.ErrorCode == (int)AuthError.UserNotFound)
+            switch (ex.ErrorCode)
             {
-                Debug.Log("Authentication failed - incorrect credentials. Checking for first login...");
-                // Return false to indicate we should check for first login
-                throw new AuthenticationFailedException("Credentials not found in Auth");
-            }
-            // else if (ex.ErrorCode == (int)AuthError.TooManyRequests)
-            // {
-            //     feedbackText.text = "Too many failed attempts. Please try again later.";
-            //     throw;
-            // }
-            else if (ex.ErrorCode == (int)AuthError.UserDisabled)
-            {
-                feedbackText.text = "This account has been disabled.";
-                throw;
-            }
-            else
-            {
-                feedbackText.text = "Login failed. Please try again.";
-                throw;
+                case (int)AuthError.WrongPassword:
+                    feedbackText.text = "Incorrect password. Please try again.";
+                    break;
+                case (int)AuthError.TooManyRequests:
+                    feedbackText.text = "Too many failed attempts. Please try again later.";
+                    break;
+                case (int)AuthError.UserDisabled:
+                    feedbackText.text = "This account has been disabled. Please contact administrator.";
+                    break;
+                case (int)AuthError.UserNotFound:
+                    feedbackText.text = "Account not found. Please check your email.";
+                    break;
+                default:
+                    feedbackText.text = "Login failed. Please try again.";
+                    break;
             }
         }
         catch (Exception ex)
         {
             Debug.LogError($"Unexpected error during regular login: {ex.Message}");
-            feedbackText.text = "Login failed due to unexpected error.";
-            throw;
+            feedbackText.text = "Login failed. Please try again.";
         }
     }
 
@@ -277,77 +269,90 @@ public class LoginManager : MonoBehaviour
 
         try
         {
-            // Search for student document using email as document ID
+            feedbackText.text = "Checking for first-time login...";
+
+            // STEP 4: Search for student document using email as document ID
+            DocumentReference studentDocRef = null;
+            DocumentSnapshot studentDocSnap = null;
+            string classCode = null;
+
+            // Search through all classes for a student document with email as document ID
             QuerySnapshot classesSnapshot = await db.Collection("classes").GetSnapshotAsync();
+
+            Debug.Log($"Searching through {classesSnapshot.Documents.Count()} classes for student with email: {email}");
 
             foreach (var classDoc in classesSnapshot.Documents)
             {
                 Debug.Log($"Checking class: {classDoc.Id}");
 
-                var studentDocRef = classDoc.Reference.Collection("students").Document(email);
-                var studentDocSnap = await studentDocRef.GetSnapshotAsync();
+                var tempStudentRef = classDoc.Reference.Collection("students").Document(email);
+                var tempStudentSnap = await tempStudentRef.GetSnapshotAsync();
 
-                if (studentDocSnap.Exists)
+                if (tempStudentSnap.Exists)
                 {
                     Debug.Log($"Student document found in class: {classDoc.Id}");
-
-                    var studentData = studentDocSnap.ToDictionary();
-                    string classCode = classDoc.GetValue<string>("classCode");
-
-                    // Check if this is indeed a first login
-                    bool firstLogin = studentData.ContainsKey("firstLogin") &&
-                                    Convert.ToBoolean(studentData["firstLogin"]);
-
-                    if (!firstLogin)
-                    {
-                        Debug.LogWarning("Account found but not marked as first login. Account may be already activated.");
-                        feedbackText.text = "Account already activated. Please use your regular password.";
-                        return;
-                    }
-
-                    // Verify temporary password
-                    string storedTempPassword = studentData.ContainsKey("tempPassword") ?
-                                              studentData["tempPassword"] as string : null;
-
-                    if (string.IsNullOrEmpty(storedTempPassword))
-                    {
-                        Debug.LogError("No temporary password found for first login account.");
-                        feedbackText.text = "Account setup incomplete. Please contact administrator.";
-                        return;
-                    }
-
-                    if (VerifyPassword(password, storedTempPassword))
-                    {
-                        Debug.Log("Temporary password verified successfully.");
-
-                        // Store current session data
-                        currentStudentRef = studentDocRef;
-                        currentEmail = email;
-                        pendingClassCode = classCode;
-
-                        // Show change password panel
-                        loginPanel.SetActive(false);
-                        changePasswordPanel.SetActive(true);
-                        changePassFeedbackText.text = "Please create a new password for your account.";
-
-                        // Clear input fields
-                        newPasswordInput.text = "";
-                        confirmPasswordInput.text = "";
-
-                        return;
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Incorrect temporary password entered.");
-                        feedbackText.text = "Incorrect temporary password.";
-                        return;
-                    }
+                    studentDocRef = tempStudentRef;
+                    studentDocSnap = tempStudentSnap;
+                    classCode = classDoc.GetValue<string>("classCode");
+                    break;
                 }
             }
 
-            // No student document found with this email
-            Debug.LogWarning($"No student account found with email: {email}");
-            feedbackText.text = "No account found with this email address.";
+            // STEP 5: Check if student document was found
+            if (studentDocRef == null || !studentDocSnap.Exists)
+            {
+                Debug.LogWarning($"No student account found with email: {email}");
+                feedbackText.text = "Invalid login credentials.";
+                return;
+            }
+
+            // Validate student document for first login
+            var studentData = studentDocSnap.ToDictionary();
+
+            // Check if this is indeed a first login
+            bool firstLogin = studentData.ContainsKey("firstLogin") &&
+                             Convert.ToBoolean(studentData["firstLogin"]);
+
+            if (!firstLogin)
+            {
+                Debug.LogWarning("Student account found but not marked as first login.");
+                feedbackText.text = "Account already activated. Please use your regular password or contact administrator.";
+                return;
+            }
+
+            // Verify temporary password
+            string storedTempPassword = studentData.ContainsKey("tempPassword") ?
+                                      studentData["tempPassword"] as string : null;
+
+            if (string.IsNullOrEmpty(storedTempPassword))
+            {
+                Debug.LogError("No temporary password found for first login account.");
+                feedbackText.text = "Account setup incomplete. Please contact administrator.";
+                return;
+            }
+
+            if (!VerifyPassword(password, storedTempPassword))
+            {
+                Debug.LogWarning("Incorrect temporary password entered.");
+                feedbackText.text = "Incorrect temporary password.";
+                return;
+            }
+
+            Debug.Log("Temporary password verified successfully.");
+
+            // Store current session data for password change
+            currentStudentRef = studentDocRef;
+            currentEmail = email;
+            pendingClassCode = classCode;
+
+            // Show change password panel
+            loginPanel.SetActive(false);
+            changePasswordPanel.SetActive(true);
+            changePassFeedbackText.text = "Please create a new password for your account.";
+
+            // Clear password input fields
+            newPasswordInput.text = "";
+            confirmPasswordInput.text = "";
         }
         catch (Exception ex)
         {
@@ -360,7 +365,6 @@ public class LoginManager : MonoBehaviour
     {
         Debug.Log("=== Change Password Submit ===");
 
-        // Disable change password button immediately
         SetChangePasswordButtonState(false);
 
         try
@@ -368,114 +372,102 @@ public class LoginManager : MonoBehaviour
             string newPass = newPasswordInput.text;
             string confirmPass = confirmPasswordInput.text;
 
-            // Validate input
+            // Validate password input
             if (string.IsNullOrEmpty(newPass) || string.IsNullOrEmpty(confirmPass))
             {
-                Debug.LogWarning("New password or confirm password field is empty.");
                 changePassFeedbackText.text = "Please fill in all fields.";
                 return;
             }
 
             if (newPass != confirmPass)
             {
-                Debug.LogWarning("New passwords do not match.");
                 changePassFeedbackText.text = "Passwords do not match.";
                 return;
             }
 
             if (newPass.Length < 6)
             {
-                Debug.LogWarning("New password too short.");
                 changePassFeedbackText.text = "Password must be at least 6 characters long.";
                 return;
             }
 
             changePassFeedbackText.text = "Creating your account...";
 
-            try
+            // Step 1: Create Firebase Auth account
+            Debug.Log($"Creating Firebase Auth account for email: {currentEmail}");
+            var userCredential = await auth.CreateUserWithEmailAndPasswordAsync(currentEmail, newPass);
+            string uid = userCredential.User.UserId;
+            Debug.Log($"Firebase Auth account created successfully. UID: {uid}");
+
+            // Step 2: Get current student data
+            var studentDocSnap = await currentStudentRef.GetSnapshotAsync();
+            if (!studentDocSnap.Exists)
             {
-                // Step 1: Create Firebase Auth account
-                Debug.Log($"Creating Firebase Auth account for email: {currentEmail}");
-                var userCredential = await auth.CreateUserWithEmailAndPasswordAsync(currentEmail, newPass);
-                string uid = userCredential.User.UserId;
-                Debug.Log($"Firebase Auth account created successfully. UID: {uid}");
-
-                // Step 2: Get current student data
-                var studentDocSnap = await currentStudentRef.GetSnapshotAsync();
-                if (!studentDocSnap.Exists)
-                {
-                    Debug.LogError("Student document no longer exists during password change.");
-                    changePassFeedbackText.text = "Account error. Please contact administrator.";
-                    return;
-                }
-
-                var studentData = studentDocSnap.ToDictionary();
-
-                // Step 3: Update student data for new document
-                studentData["isActive"] = true;
-                studentData["uid"] = uid;
-                studentData["firstLogin"] = false;
-                studentData["status"] = "active";
-                studentData["tempPassword"] = FieldValue.Delete;
-                studentData["activatedAt"] = Timestamp.GetCurrentTimestamp();
-
-                // Step 4: Create new student document with UID as document ID
-                var classRef = currentStudentRef.Parent.Parent;
-                var newStudentRef = classRef.Collection("students").Document(uid);
-
-                Debug.Log($"Creating new student document with UID: {uid}");
-                await newStudentRef.SetAsync(studentData, SetOptions.MergeAll);
-
-                // Step 5: Delete old student document (with email as ID)
-                Debug.Log($"Deleting old student document with email ID: {currentEmail}");
-                await currentStudentRef.DeleteAsync();
-
-                // Update reference
-                currentStudentRef = newStudentRef;
-
-                // Step 6: Log successful account activation
-                await LogActivity(
-                    "Account activated",
-                    pendingClassCode,
-                    currentEmail,
-                    "First login completed successfully. Firebase Auth account created.",
-                    uid
-                );
-
-                Debug.Log("Account activation completed successfully.");
-                changePasswordPanel.SetActive(false);
-                feedbackText.text = "Account created successfully!";
-
-                // Step 7: Load menu scene
-                await LoadMenuScene();
+                Debug.LogError("Student document no longer exists during password change.");
+                changePassFeedbackText.text = "Account error. Please contact administrator.";
+                return;
             }
-            catch (FirebaseException ex)
-            {
-                Debug.LogError($"Firebase Auth account creation failed: {ex.Message}");
 
-                // Check specific auth error codes
-                if (ex.ErrorCode == (int)AuthError.WeakPassword)
-                {
+            var studentData = studentDocSnap.ToDictionary();
+
+            // Step 3: Update student data for new document
+            studentData["isActive"] = true;
+            studentData["uid"] = uid;
+            studentData["firstLogin"] = false;
+            studentData["status"] = "active";
+            studentData["tempPassword"] = FieldValue.Delete;
+            studentData["activatedAt"] = Timestamp.GetCurrentTimestamp();
+
+            // Step 4: Create new student document with UID as document ID
+            var classRef = currentStudentRef.Parent.Parent;
+            var newStudentRef = classRef.Collection("students").Document(uid);
+
+            Debug.Log($"Creating new student document with UID: {uid}");
+            await newStudentRef.SetAsync(studentData, SetOptions.MergeAll);
+
+            // Step 5: Delete old student document (with email as ID)
+            Debug.Log($"Deleting old student document with email ID: {currentEmail}");
+            await currentStudentRef.DeleteAsync();
+
+            // Step 6: Log successful account activation
+            await LogActivity(
+                "Account activated",
+                pendingClassCode,
+                currentEmail,
+                "First login completed successfully. Firebase Auth account created.",
+                uid
+            );
+
+            Debug.Log("Account activation completed successfully.");
+            changePasswordPanel.SetActive(false);
+
+            changePassFeedbackText.text = "Account created successfully!";
+            await LoadMenuScene();
+        }
+        catch (FirebaseException ex)
+        {
+            Debug.LogError($"Firebase Auth account creation failed: {ex.Message}");
+
+            switch (ex.ErrorCode)
+            {
+                case (int)AuthError.WeakPassword:
                     changePassFeedbackText.text = "Password is too weak. Please choose a stronger password.";
-                }
-                else if (ex.ErrorCode == (int)AuthError.EmailAlreadyInUse)
-                {
+                    break;
+                case (int)AuthError.EmailAlreadyInUse:
                     changePassFeedbackText.text = "Email is already in use. Please contact administrator.";
-                }
-                else
-                {
+                    break;
+                default:
                     changePassFeedbackText.text = "Failed to create account. Please try again.";
-                }
+                    break;
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Unexpected error during password change: {ex.Message}");
-                changePassFeedbackText.text = "Account creation failed. Please try again.";
-            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Unexpected error during password change: {ex.Message}");
+            changePassFeedbackText.text = "Account creation failed. Please try again.";
         }
         finally
         {
-            // Re-enable change password button when process is complete
             SetChangePasswordButtonState(true);
         }
     }
@@ -579,7 +571,6 @@ public class LoginManager : MonoBehaviour
         try
         {
             Debug.Log("Loading menu scene...");
-            feedbackText.text = "Login successful! Loading...";
 
             var sceneLoad = SceneManager.LoadSceneAsync(menuSceneName);
             while (!sceneLoad.isDone)
