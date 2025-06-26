@@ -33,7 +33,9 @@ public class LoginManager : MonoBehaviour
     [SerializeField] private TMP_Text changePassFeedbackText;
     [SerializeField] private Button loginButton;
     [SerializeField] private Button changePasswordButton;
+    public Animator buttonAnimator;
 
+    public Animator buttonChangeAnimator;
     public string menuSceneName = "MenuScene";
     public string registerSceneName = "RegisterScene";
 
@@ -85,6 +87,7 @@ public class LoginManager : MonoBehaviour
         Debug.Log("=== Login Button Clicked ===");
 
         // Disable login button to prevent multiple clicks
+        buttonAnimator.SetTrigger("Clicked");
         SetLoginButtonState(false);
 
         try
@@ -365,6 +368,8 @@ public class LoginManager : MonoBehaviour
     {
         Debug.Log("=== Change Password Submit ===");
 
+
+        buttonChangeAnimator.SetTrigger("Clicked");
         SetChangePasswordButtonState(false);
 
         try

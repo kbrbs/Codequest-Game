@@ -12,7 +12,7 @@ using System.Linq;
 using UnityEngine.SceneManagement;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
-using UnityEngine.UI; 
+using UnityEngine.UI;
 
 public class RegisterManager : MonoBehaviour
 {
@@ -22,6 +22,7 @@ public class RegisterManager : MonoBehaviour
     public TMP_InputField classCodeInput;
     public TextMeshProUGUI feedbackText;
     [SerializeField] public Button regButton;
+    public Animator buttonAnimator;
 
     public string loginSceneName = "LoginScene";
 
@@ -42,6 +43,7 @@ public class RegisterManager : MonoBehaviour
         Debug.Log("=== Reg Button Clicked ===");
 
         // Disable reg button immediately
+        buttonAnimator.SetTrigger("Clicked");
         SetRegButtonState(false);
         try
         {
@@ -49,6 +51,7 @@ public class RegisterManager : MonoBehaviour
                 string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName))
             {
                 feedbackText.text = "Please fill in all required fields";
+                SetRegButtonState(true);
                 return;
             }
 
@@ -89,6 +92,7 @@ public class RegisterManager : MonoBehaviour
                 catch (Exception ex)
                 {
                     feedbackText.text = "Registration failed. Please try again.";
+                    SetRegButtonState(true);
                     Debug.LogError("Registration error: " + ex.Message);
                 }
                 finally
@@ -102,6 +106,7 @@ public class RegisterManager : MonoBehaviour
         {
             Debug.LogError($"Unexpected error in login process: {ex.Message}");
             feedbackText.text = "Login failed. Please try again.";
+            SetRegButtonState(true);
         }
     }
     private void SetRegButtonState(bool enabled)
@@ -233,7 +238,8 @@ public class RegisterManager : MonoBehaviour
 
             if (!querySnapshot.Any())
             {
-                feedbackText.text = "Error: Class code not found";
+                feedbackText.text = "Class code not found";
+                SetRegButtonState(true);
                 return;
             }
 
