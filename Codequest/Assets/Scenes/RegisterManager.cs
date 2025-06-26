@@ -21,7 +21,7 @@ public class RegisterManager : MonoBehaviour
     public TMP_InputField emailInput;
     public TMP_InputField classCodeInput;
     public TextMeshProUGUI feedbackText;
-    public Button regButton;
+    [SerializeField] public Button regButton;
 
     public string loginSceneName = "LoginScene";
 
@@ -63,6 +63,7 @@ public class RegisterManager : MonoBehaviour
                     if (fetchProvidersTask.Result != null && fetchProvidersTask.Result.Any())
                     {
                         feedbackText.text = "Email already registered in authentication system.";
+                        SetRegButtonState(true); // <-- Enable button on duplicate
                         return;
                     }
                 }
@@ -70,23 +71,37 @@ public class RegisterManager : MonoBehaviour
                 {
                     feedbackText.text = "Error checking authentication";
                     Debug.LogError("Error checking authentication: " + ex.Message);
+                    SetRegButtonState(true); // <-- Enable button on error
                     return;
                 }
 
-                // Generate and hash temporary password
-                string tempPassword = GenerateTemporaryPassword();
-                string hashedTempPassword = HashPassword(tempPassword);
+                try
+                {
+                    // Generate and hash temporary password
+                    string tempPassword = GenerateTemporaryPassword();
+                    string hashedTempPassword = HashPassword(tempPassword);
 
-                // Send temporary password to email
-                StartCoroutine(SendTemporaryPasswordEmail(email, tempPassword, fullName));
+                    // Send temporary password to email
+                    StartCoroutine(SendTemporaryPasswordEmail(email, tempPassword, fullName));
 
-                await AddStudentToClass(classCode, studentNumber, fullName, email, hashedTempPassword);
+                    await AddStudentToClass(classCode, studentNumber, fullName, email, hashedTempPassword);
+                }
+                catch (Exception ex)
+                {
+                    feedbackText.text = "Registration failed. Please try again.";
+                    Debug.LogError("Registration error: " + ex.Message);
+                }
+                finally
+                {
+                    SetRegButtonState(true); // <-- Always enable button at the end
+                }
             });
 
         }
-        finally
+        catch (Exception ex)
         {
-            SetRegButtonState(true); // Disable button to prevent multiple clicks
+            Debug.LogError($"Unexpected error in login process: {ex.Message}");
+            feedbackText.text = "Login failed. Please try again.";
         }
     }
     private void SetRegButtonState(bool enabled)
@@ -130,6 +145,7 @@ public class RegisterManager : MonoBehaviour
             if (!querySnapshot.Any())
             {
                 feedbackText.text = "Class code not found";
+                SetRegButtonState(true);
                 return;
             }
 
@@ -148,12 +164,14 @@ public class RegisterManager : MonoBehaviour
             if (emailExists)
             {
                 feedbackText.text = "Email already registered in this class";
+                SetRegButtonState(true);
                 return;
             }
 
             if (studentNumberExists)
             {
                 feedbackText.text = "Student number already registered in this class";
+                SetRegButtonState(true);
                 return;
             }
 
@@ -162,6 +180,7 @@ public class RegisterManager : MonoBehaviour
             if (studentNumberExistsInOtherClass)
             {
                 feedbackText.text = "Student number already registered in another class";
+                SetRegButtonState(true);
                 return;
             }
 
