@@ -416,7 +416,7 @@ public class LoginManager : MonoBehaviour
             studentData["firstLogin"] = false;
             studentData["status"] = "active";
             studentData["tempPassword"] = FieldValue.Delete;
-            studentData["activatedAt"] = Timestamp.GetCurrentTimestamp();
+            studentData["timestamp"] = Timestamp.GetCurrentTimestamp();
 
             // Step 4: Create new student document with UID as document ID
             var classRef = currentStudentRef.Parent.Parent;
@@ -431,7 +431,7 @@ public class LoginManager : MonoBehaviour
 
             // Step 6: Log successful account activation
             await LogActivity(
-                "Account activated",
+                "First login complete",
                 pendingClassCode,
                 currentEmail,
                 "First login completed successfully. Firebase Auth account created.",

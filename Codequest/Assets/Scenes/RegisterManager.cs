@@ -315,7 +315,7 @@ public class RegisterManager : MonoBehaviour
     {
         string apiKey = "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";
         string fromEmail = "barbosakat26@gmail.com";
-        string fromName = "Codequest";
+        string fromName = "JavArise: To the top";
         string templateId = "d-74c5128171eb490c8a8c9e73aa5c364a";
 
         // Template data for SendGrid dynamic template
@@ -323,7 +323,7 @@ public class RegisterManager : MonoBehaviour
         {
             { "passcode", tempPassword },
             { "name", !string.IsNullOrEmpty(fullName) ? fullName : "Student" },
-            { "app_name", "Codequest" }
+            { "app_name", "JavArise" }
         };
 
         SendGridTemplatePayload payload = new SendGridTemplatePayload
