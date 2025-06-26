@@ -319,9 +319,10 @@ public class RegisterManager : MonoBehaviour
     // SendGrid integration with template
     public IEnumerator SendTemporaryPasswordEmail(string toEmail, string tempPassword, string fullName = "")
     {
-        string apiKey = "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";
+        // string apiKey = "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";
+        string apiKey = "SG.-EsJ5rSPSNWjRWLsTlJuew.ZZS2ymsbKiiwGryBRGsiwXR8Leyzj8LqPej7a6A5sGA";
         string fromEmail = "barbosakat26@gmail.com";
-        string fromName = "JavArise: To the top";
+        string fromName = "JavaRise: To the top";
         string templateId = "d-74c5128171eb490c8a8c9e73aa5c364a";
 
         // Template data for SendGrid dynamic template
@@ -329,7 +330,7 @@ public class RegisterManager : MonoBehaviour
         {
             { "passcode", tempPassword },
             { "name", !string.IsNullOrEmpty(fullName) ? fullName : "Student" },
-            { "app_name", "JavArise" }
+            { "app_name", "JavaRise" }
         };
 
         SendGridTemplatePayload payload = new SendGridTemplatePayload
