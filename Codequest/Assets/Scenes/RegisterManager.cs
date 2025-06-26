@@ -1,7 +1,9 @@
 using UnityEngine;
 using TMPro;
+using Firebase;
 using Firebase.Firestore;
 using Firebase.Auth;
+using Firebase.Extensions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -61,21 +63,41 @@ public class RegisterManager : MonoBehaviour
                 var auth = FirebaseAuth.DefaultInstance;
                 try
                 {
-                    var fetchProvidersTask = auth.FetchProvidersForEmailAsync(email);
-                    await fetchProvidersTask;
-                    if (fetchProvidersTask.Result != null && fetchProvidersTask.Result.Any())
+                    // var fetchProvidersTask = auth.FetchProvidersForEmailAsync(email);
+                    // await fetchProvidersTask;
+                    // if (fetchProvidersTask.Result != null && fetchProvidersTask.Result.Any())
+                    // {
+                    //     feedbackText.text = "Email already registered in authentication system.";
+                    //     SetRegButtonState(true); // <-- Enable button on duplicate
+                    //     return;
+                    // }
+
+                    // Try to create the user in Firebase Auth
+                    var userCredential = await auth.CreateUserWithEmailAndPasswordAsync(email, "tempPassword123");
+
+                    // If successful, delete the user immediately (optional, if you don't want to create yet)
+                    await userCredential.User.DeleteAsync();
+                }
+                // catch (Exception ex)
+                catch (FirebaseException ex)
+                {
+                    // feedbackText.text = "Error checking authentication";
+                    // Debug.LogError("Error checking authentication: " + ex.Message);
+                    // SetRegButtonState(true); // <-- Enable button on error
+                    // return;
+                    if ((AuthError)ex.ErrorCode == AuthError.EmailAlreadyInUse)
                     {
                         feedbackText.text = "Email already registered in authentication system.";
-                        SetRegButtonState(true); // <-- Enable button on duplicate
+                        SetRegButtonState(true);
                         return;
                     }
-                }
-                catch (Exception ex)
-                {
-                    feedbackText.text = "Error checking authentication";
-                    Debug.LogError("Error checking authentication: " + ex.Message);
-                    SetRegButtonState(true); // <-- Enable button on error
-                    return;
+                    else
+                    {
+                        feedbackText.text = "Error checking authentication";
+                        Debug.LogError("Error checking authentication: " + ex.Message);
+                        SetRegButtonState(true);
+                        return;
+                    }
                 }
 
                 try
