@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@string/gcm_defaultSenderId,@string/google_storage_bucket,@string/project_id,@string/google_api_key,@string/google_crash_reporting_api_key,@string/google_app_id">
+  <string name="gcm_defaultSenderId" translatable="false">5857953993</string>
+  <string name="google_storage_bucket" translatable="false">codequest-2025.firebasestorage.app</string>
+  <string name="project_id" translatable="false">codequest-2025</string>
+  <string name="google_api_key" translatable="false">AIzaSyBjpetUCmVDCX0qvv_MRSsK4_jK96PqKyQ</string>
+  <string name="google_crash_reporting_api_key" translatable="false">AIzaSyBjpetUCmVDCX0qvv_MRSsK4_jK96PqKyQ</string>
+  <string name="google_app_id" translatable="false">1:5857953993:android:303ab2e99d2499a9b52518</string>
+</resources>
