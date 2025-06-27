@@ -25,6 +25,7 @@ public class RegisterManager : MonoBehaviour
     public TextMeshProUGUI feedbackText;
     [SerializeField] public Button regButton;
     public Animator buttonAnimator;
+    public Toggle termsToggle;
 
     public string loginSceneName = "LoginScene";
 
@@ -32,15 +33,19 @@ public class RegisterManager : MonoBehaviour
 
     void Start()
     {
-        db = FirebaseFirestore.DefaultInstance;
+        db = FirebaseFirestore.DefaultInstance; if (termsToggle != null)
+            termsToggle.onValueChanged.AddListener(OnTermsToggleChanged);
+
+        // Set initial state
+        SetRegButtonState(termsToggle != null && termsToggle.isOn);
     }
 
     public void OnRegisterClick()
     {
         string email = emailInput.text.Trim();
         string studentNumber = studentNumberInput.text.Trim();
-        string classCode = classCodeInput.text.Trim();
-        string fullName = fullNameInput.text.Trim();
+        string classCode = classCodeInput.text.ToUpper().Trim();
+        string fullName = CapitalizeFullName(fullNameInput.text.Trim());
 
         Debug.Log("=== Reg Button Clicked ===");
 
@@ -52,6 +57,7 @@ public class RegisterManager : MonoBehaviour
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(studentNumber) ||
                 string.IsNullOrEmpty(classCode) || string.IsNullOrEmpty(fullName))
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Please fill in all required fields";
                 SetRegButtonState(true);
                 return;
@@ -87,12 +93,14 @@ public class RegisterManager : MonoBehaviour
                     // return;
                     if ((AuthError)ex.ErrorCode == AuthError.EmailAlreadyInUse)
                     {
+                        feedbackText.color = Color.red;
                         feedbackText.text = "Email already registered in authentication system.";
                         SetRegButtonState(true);
                         return;
                     }
                     else
                     {
+                        feedbackText.color = Color.red;
                         feedbackText.text = "Error checking authentication";
                         Debug.LogError("Error checking authentication: " + ex.Message);
                         SetRegButtonState(true);
@@ -113,6 +121,7 @@ public class RegisterManager : MonoBehaviour
                 }
                 catch (Exception ex)
                 {
+                    feedbackText.color = Color.red;
                     feedbackText.text = "Registration failed. Please try again.";
                     SetRegButtonState(true);
                     Debug.LogError("Registration error: " + ex.Message);
@@ -127,16 +136,23 @@ public class RegisterManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Unexpected error in login process: {ex.Message}");
+            feedbackText.color = Color.red;
             feedbackText.text = "Login failed. Please try again.";
             SetRegButtonState(true);
         }
     }
     private void SetRegButtonState(bool enabled)
     {
+        // if (regButton != null)
+        // {
+        //     regButton.interactable = enabled;
+        //     Debug.Log($"Register button {(enabled ? "enabled" : "disabled")}");
+        // }
         if (regButton != null)
         {
-            regButton.interactable = enabled;
-            Debug.Log($"Register button {(enabled ? "enabled" : "disabled")}");
+            // Only enable if terms are accepted
+            regButton.interactable = enabled && (termsToggle == null || termsToggle.isOn);
+            Debug.Log($"Register button {(regButton.interactable ? "enabled" : "disabled")}");
         }
     }
 
@@ -171,6 +187,7 @@ public class RegisterManager : MonoBehaviour
 
             if (!querySnapshot.Any())
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Class code not found";
                 SetRegButtonState(true);
                 return;
@@ -190,6 +207,7 @@ public class RegisterManager : MonoBehaviour
 
             if (emailExists)
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Email already registered in this class";
                 SetRegButtonState(true);
                 return;
@@ -197,6 +215,7 @@ public class RegisterManager : MonoBehaviour
 
             if (studentNumberExists)
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Student number already registered in this class";
                 SetRegButtonState(true);
                 return;
@@ -206,6 +225,7 @@ public class RegisterManager : MonoBehaviour
             bool studentNumberExistsInOtherClass = await CheckStudentNumberInAllClasses(studentNumber, classCode);
             if (studentNumberExistsInOtherClass)
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Student number already registered in another class";
                 SetRegButtonState(true);
                 return;
@@ -215,6 +235,7 @@ public class RegisterManager : MonoBehaviour
         }
         catch (Exception ex)
         {
+            feedbackText.color = Color.red;
             feedbackText.text = "Error checking for duplicates";
             Debug.LogError("Error checking for duplicates: " + ex.Message);
         }
@@ -260,6 +281,7 @@ public class RegisterManager : MonoBehaviour
 
             if (!querySnapshot.Any())
             {
+                feedbackText.color = Color.red;
                 feedbackText.text = "Class code not found";
                 SetRegButtonState(true);
                 return;
@@ -277,15 +299,18 @@ public class RegisterManager : MonoBehaviour
                 { "status", "pending" },
                 { "isActive", false },
                 { "firstLogin", true },
+                { "role", "Player" },
                 { "createdAt", Timestamp.GetCurrentTimestamp() }
             };
             await studentRecordRef.SetAsync(studentData);
 
+            feedbackText.color = new Color(0.15294117647058825f, 0.5882352941176471f, 0.25882352941176473f);
             feedbackText.text = "Registration successful! Check your email for your temporary password.";
             LogActivity(email, fullName, classCode);
         }
         catch (Exception ex)
         {
+            feedbackText.color = Color.red;
             feedbackText.text = ex.Message;
         }
     }
@@ -402,6 +427,7 @@ public class RegisterManager : MonoBehaviour
                 Debug.LogError("Response Text: " + www.downloadHandler.text);
 
                 // Fallback: Show temp password in UI (for development/testing)
+                feedbackText.color = Color.red;
                 feedbackText.text = $"Email service temporarily unavailable. Your temporary password is: {tempPassword}";
                 Debug.LogWarning($"TEMP PASSWORD FOR {toEmail}: {tempPassword}");
             }
@@ -409,6 +435,7 @@ public class RegisterManager : MonoBehaviour
             {
                 Debug.Log("Temporary password sent via SendGrid template.");
                 Debug.Log("SendGrid Response: " + www.downloadHandler.text);
+                feedbackText.color = new Color(0.15294117647058825f, 0.5882352941176471f, 0.25882352941176473f);
                 feedbackText.text = "Registration successful! Check your email for your temporary password.";
             }
         }
@@ -417,5 +444,26 @@ public class RegisterManager : MonoBehaviour
     public void LoginButtonClick()
     {
         var sceneLoad = SceneManager.LoadSceneAsync(loginSceneName);
+    }
+
+    private string CapitalizeFullName(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return input;
+
+        var words = input.Split(' ');
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (words[i].Length > 0)
+            {
+                words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
+            }
+        }
+        return string.Join(" ", words);
+    }
+
+    private void OnTermsToggleChanged(bool isOn)
+    {
+        SetRegButtonState(isOn);
     }
 }

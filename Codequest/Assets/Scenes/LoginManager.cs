@@ -71,6 +71,7 @@ public class LoginManager : MonoBehaviour
             else
             {
                 Debug.LogError($"Could not resolve all Firebase dependencies: {dependencyStatus}");
+                feedbackText.color = Color.red;
                 feedbackText.text = "Error initializing system. Please restart the application.";
             }
         }
@@ -78,6 +79,7 @@ public class LoginManager : MonoBehaviour
         {
             Debug.LogError($"Firebase initialization error: {ex.Message}");
             Debug.LogError($"Stack trace: {ex.StackTrace}");
+            feedbackText.color = Color.red;
             feedbackText.text = "System initialization failed. Please restart the application.";
         }
     }
@@ -96,13 +98,14 @@ public class LoginManager : MonoBehaviour
             if (db == null || auth == null)
             {
                 Debug.LogError("Firebase not initialized properly.");
+                feedbackText.color = Color.red;
                 feedbackText.text = "System not ready. Please restart the application.";
                 return;
             }
 
             // Get and validate input
             string email = emailInput.text.Trim().ToLower();
-            string password = passwordInput.text;
+            string password = passwordInput.text.Trim();
 
             if (!ValidateInput(email, password))
             {
@@ -110,6 +113,7 @@ public class LoginManager : MonoBehaviour
             }
 
             Debug.Log($"Starting login process for email: {email}");
+            feedbackText.color = Color.black;
             feedbackText.text = "Checking account...";
 
             // STEP 1: Check if email is already registered in Firebase Auth
@@ -131,6 +135,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Unexpected error in login process: {ex.Message}");
+            feedbackText.color = Color.red;
             feedbackText.text = "Login failed. Please try again.";
         }
         finally
@@ -145,6 +150,7 @@ public class LoginManager : MonoBehaviour
         if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
         {
             Debug.LogWarning("Email or password field is empty.");
+            feedbackText.color = Color.red;
             feedbackText.text = "Please fill in all fields.";
             return false;
         }
@@ -152,6 +158,7 @@ public class LoginManager : MonoBehaviour
         if (!IsValidEmail(email))
         {
             Debug.LogWarning("Invalid email format entered.");
+            feedbackText.color = Color.red;
             feedbackText.text = "Please enter a valid email address.";
             return false;
         }
@@ -166,7 +173,9 @@ public class LoginManager : MonoBehaviour
             Debug.Log($"Checking if email exists in Firebase Auth: {email},{password}");
             try
             {
-                await auth.SignInWithEmailAndPasswordAsync(email, password);
+                // await auth.SignInWithEmailAndPasswordAsync(email, password);
+                var userCredential = await auth.SignInWithEmailAndPasswordAsync(email, password);
+string uid = userCredential.User.UserId;
 
                 Debug.Log($"Email exists in Firebase Auth: true (unexpected successful login)");
                 return true;
@@ -228,11 +237,23 @@ public class LoginManager : MonoBehaviour
 
         try
         {
+            feedbackText.color = Color.black;
             feedbackText.text = "Logging in...";
 
             var userCredential = await auth.SignInWithEmailAndPasswordAsync(email, password);
             Debug.Log($"Regular login successful for user: {userCredential.User.UserId}");
 
+            // After successful sign-in and getting uid:
+            bool isPlayer = await CheckIfRoleIsPlayer(userCredential.User.UserId);
+            if (!isPlayer)
+            {
+                Debug.Log("You are not allowed to login. Only Player accounts can access this system.");
+                feedbackText.color = Color.red;
+                feedbackText.text = "Invalid Credentials.";
+                return;
+            }
+
+            feedbackText.color = new Color(0.15294117647058825f, 0.5882352941176471f, 0.25882352941176473f);
             feedbackText.text = "Login successful! Loading...";
             await LoadMenuScene();
         }
@@ -243,18 +264,23 @@ public class LoginManager : MonoBehaviour
             switch (ex.ErrorCode)
             {
                 case (int)AuthError.WrongPassword:
+                    feedbackText.color = Color.red;
                     feedbackText.text = "Incorrect password. Please try again.";
                     break;
                 case (int)AuthError.TooManyRequests:
+                    feedbackText.color = Color.red;
                     feedbackText.text = "Too many failed attempts. Please try again later.";
                     break;
                 case (int)AuthError.UserDisabled:
+                    feedbackText.color = Color.red;
                     feedbackText.text = "This account has been disabled. Please contact administrator.";
                     break;
                 case (int)AuthError.UserNotFound:
+                    feedbackText.color = Color.red;
                     feedbackText.text = "Account not found. Please check your email.";
                     break;
                 default:
+                    feedbackText.color = Color.red;
                     feedbackText.text = "Login failed. Please try again.";
                     break;
             }
@@ -262,6 +288,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Unexpected error during regular login: {ex.Message}");
+            feedbackText.color = Color.red;
             feedbackText.text = "Login failed. Please try again.";
         }
     }
@@ -272,6 +299,7 @@ public class LoginManager : MonoBehaviour
 
         try
         {
+            feedbackText.color = Color.black;
             feedbackText.text = "Checking for first-time login...";
 
             // STEP 4: Search for student document using email as document ID
@@ -305,6 +333,7 @@ public class LoginManager : MonoBehaviour
             if (studentDocRef == null || !studentDocSnap.Exists)
             {
                 Debug.LogWarning($"No student account found with email: {email}");
+                feedbackText.color = Color.red;
                 feedbackText.text = "Invalid login credentials.";
                 return;
             }
@@ -319,6 +348,7 @@ public class LoginManager : MonoBehaviour
             if (!firstLogin)
             {
                 Debug.LogWarning("Student account found but not marked as first login.");
+                feedbackText.color = Color.red;
                 feedbackText.text = "Account already activated. Please use your regular password or contact administrator.";
                 return;
             }
@@ -330,6 +360,7 @@ public class LoginManager : MonoBehaviour
             if (string.IsNullOrEmpty(storedTempPassword))
             {
                 Debug.LogError("No temporary password found for first login account.");
+                feedbackText.color = Color.red;
                 feedbackText.text = "Account setup incomplete. Please contact administrator.";
                 return;
             }
@@ -337,6 +368,7 @@ public class LoginManager : MonoBehaviour
             if (!VerifyPassword(password, storedTempPassword))
             {
                 Debug.LogWarning("Incorrect temporary password entered.");
+                feedbackText.color = Color.red;
                 feedbackText.text = "Incorrect temporary password.";
                 return;
             }
@@ -351,6 +383,7 @@ public class LoginManager : MonoBehaviour
             // Show change password panel
             loginPanel.SetActive(false);
             changePasswordPanel.SetActive(true);
+            changePassFeedbackText.color = Color.black;
             changePassFeedbackText.text = "Please create a new password for your account.";
 
             // Clear password input fields
@@ -360,6 +393,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Error during first login attempt: {ex.Message}");
+            feedbackText.color = Color.red;
             feedbackText.text = "Failed to verify account. Please try again.";
         }
     }
@@ -380,22 +414,25 @@ public class LoginManager : MonoBehaviour
             // Validate password input
             if (string.IsNullOrEmpty(newPass) || string.IsNullOrEmpty(confirmPass))
             {
+                changePassFeedbackText.color = Color.red;
                 changePassFeedbackText.text = "Please fill in all fields.";
                 return;
             }
 
             if (newPass != confirmPass)
             {
+                changePassFeedbackText.color = Color.red;
                 changePassFeedbackText.text = "Passwords do not match.";
                 return;
             }
 
             if (newPass.Length < 6)
             {
+                changePassFeedbackText.color = Color.red;
                 changePassFeedbackText.text = "Password must be at least 6 characters long.";
                 return;
             }
-
+            changePassFeedbackText.color = Color.black;
             changePassFeedbackText.text = "Creating your account...";
 
             // Step 1: Create Firebase Auth account
@@ -409,6 +446,7 @@ public class LoginManager : MonoBehaviour
             if (!studentDocSnap.Exists)
             {
                 Debug.LogError("Student document no longer exists during password change.");
+                changePassFeedbackText.color = Color.red;
                 changePassFeedbackText.text = "Account error. Please contact administrator.";
                 return;
             }
@@ -444,9 +482,10 @@ public class LoginManager : MonoBehaviour
             );
 
             Debug.Log("Account activation completed successfully.");
-            changePasswordPanel.SetActive(false);
 
+            changePassFeedbackText.color = new Color(0.15294117647058825f, 0.5882352941176471f, 0.25882352941176473f);
             changePassFeedbackText.text = "Account created successfully!";
+            changePasswordPanel.SetActive(false);
             await LoadMenuScene();
         }
         catch (FirebaseException ex)
@@ -456,12 +495,15 @@ public class LoginManager : MonoBehaviour
             switch (ex.ErrorCode)
             {
                 case (int)AuthError.WeakPassword:
+                    changePassFeedbackText.color = Color.red;
                     changePassFeedbackText.text = "Password is too weak. Please choose a stronger password.";
                     break;
                 case (int)AuthError.EmailAlreadyInUse:
+                    changePassFeedbackText.color = Color.red;
                     changePassFeedbackText.text = "Email is already in use. Please contact administrator.";
                     break;
                 default:
+                    changePassFeedbackText.color = Color.red;
                     changePassFeedbackText.text = "Failed to create account. Please try again.";
                     break;
             }
@@ -469,6 +511,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Unexpected error during password change: {ex.Message}");
+            changePassFeedbackText.color = Color.red;
             changePassFeedbackText.text = "Account creation failed. Please try again.";
         }
         finally
@@ -588,6 +631,7 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to load menu scene: {ex.Message}");
+            feedbackText.color = Color.black;
             feedbackText.text = "Login successful but failed to load menu. Please restart.";
         }
     }
@@ -602,6 +646,35 @@ public class LoginManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to load register scene: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> CheckIfRoleIsPlayer(string uid)
+    {
+        try
+        {
+            QuerySnapshot classesSnapshot = await db.Collection("classes").GetSnapshotAsync();
+            foreach (var classDoc in classesSnapshot.Documents)
+            {
+                var studentDocRef = classDoc.Reference.Collection("students").Document(uid);
+                var studentDocSnap = await studentDocRef.GetSnapshotAsync();
+                if (studentDocSnap.Exists)
+                {
+                    var studentData = studentDocSnap.ToDictionary();
+                    if (studentData.ContainsKey("role") && studentData["role"] != null)
+                    {
+                        string role = studentData["role"].ToString();
+                        if (role.Equals("Player", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error checking role for {uid}: {ex.Message}");
+            return false;
         }
     }
 }
