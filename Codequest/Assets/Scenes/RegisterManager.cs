@@ -63,6 +63,15 @@ public class RegisterManager : MonoBehaviour
                 return;
             }
 
+
+            if (studentNumber.Length != 10)
+            {
+                feedbackText.color = Color.red;
+                feedbackText.text = "Student number must be exactly 10 characters.";
+                SetRegButtonState(true);
+                return;
+            }
+
             CheckForDuplicate(email, studentNumber, classCode, async () =>
             {
                 // Check Firebase Auth for existing email
